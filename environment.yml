@@ -1,0 +1,12 @@
+name: HIERARCHICAL_CLUSTERING
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - scipy
+  - numpy
+  - hdf5
+  - matplotlib
+  - sklearn
+  - anytree
