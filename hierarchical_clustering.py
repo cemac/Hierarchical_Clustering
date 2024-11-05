@@ -5,7 +5,7 @@
  of the current tree, and an outer node that decides whether to accept that
  clustering and whether to go to the next level in the hierarchy.
  The user can chose which scores to use for both the inner and outer loop from
- Wemmer-Garcanski, CalinskiHarabaz, Silhouette or DaviesBouldin
+ Wemmert-Gancarski, CalinskiHarabaz, Silhouette or DaviesBouldin
  If a cluster is too sparsely populated it will be added to an outlier node.
 
  Authors:
