@@ -5,7 +5,7 @@
  of the current tree, and an outer node that decides whether to accept that
  clustering and whether to go to the next level in the hierarchy.
  The user can chose which scores to use for both the inner and outer loop from
- Wemmert-Gancarski, CalinskiHarabaz, Silhouette or DaviesBouldin
+ Wemmert-Gancarski, CalinskiHarabasz, Silhouette or DaviesBouldin
  If a cluster is too sparsely populated it will be added to an outlier node.
 
  Authors:
@@ -23,11 +23,6 @@ from sklearn.decomposition import PCA
 from cluster_tree import *
 from scores import *
 
-# class to keep labels and matching centroids together, passed back from inner loop
-class ClusterModelOuput():
-    def __init__(self, labels, centroids):
-        self.labels=labels
-        self.centroids=centroids
 
 #---------------------------------------------------------------------------------
 # get_PCA()
@@ -44,7 +39,7 @@ class ClusterModelOuput():
 def get_PCA(X_std,evr_threshold,verbose=False):
     pca =  PCA()
     if(verbose):
-        print ('get_PCA: input data shape is {}'.format(X_std.shape))
+        print ('get_PCA: input data shape is {}, evr_threshold is {}'.format(X_std.shape, evr_threshold))
     X_new = pca.fit_transform(X_std)
 
     if(verbose):
@@ -106,7 +101,9 @@ def remove_label_gaps(labels):
     return new_labels
 
 #---------------------------------------------------------------------------------
-# replace_current_cluster_labels
+# get_replacement_current_cluster_labels
+# replaces all values of 0 in the model_labels with the old_label (that which this cluster had) and set all other non zero labels
+# as next_cluster_label plus value in model_labels. Leave the OUTLIER_LABELS as they are.
 # inputs:
 #    old_label - the label of the cluster that has been subclustered
 #    model_labels - the labels that the clustering algorithm came up with. Usually 0-n, but may contain OUTLIER_LABEL
@@ -115,7 +112,7 @@ def remove_label_gaps(labels):
 #    new_labels: A new numpy array of labels (same size as model_labels) with the 0s replaced by old_label
 #                and the other positive labels replaced by next_cluster_label upwards.
 #---------------------------------------------------------------------------------
-def replace_current_cluster_labels(old_label, model_labels, next_cluster_label):
+def get_replacement_current_cluster_labels(old_label, model_labels, next_cluster_label):
     # where the model_labels is 0 set to the old label
     # for all the other positive model_labels set to next_cluster_label upwards
     new_labels=np.copy(model_labels)
@@ -142,7 +139,7 @@ def replace_current_cluster_labels(old_label, model_labels, next_cluster_label):
 #     use_kmeans - if True, use kmeans instead of spectral clustering
 #     verbose - if True, print what is going on
 # returns:
-#     best_model - the labels and centroids defining the new sub clusters of this cluster
+#     prev_labels - the labels defining the new sub clusters of this cluster
 #     X_new - the pca data for this cluster
 #---------------------------------------------------------------------------------
 def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, max_npoints_for_outlier, scorer_type, cluster_name, use_kmeans=False, verbose=False):
@@ -235,7 +232,10 @@ def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, ma
             split_is_better=scorer.split_is_better(this_score)
         if split_is_better:
             # we are going round loop again so save these labels and score
-            number_of_clusters += 1
+            # if we found outliers then don't change the number of clusters but do the clustering again without the outliers
+            # otherwise increment the number of clusters
+            if noutliers==0:
+                number_of_clusters += 1
             scorer.add_score(this_score)# save the scores
             prev_labels=np.copy(new_labels) # save labels from this loop
             if verbose:
@@ -250,13 +250,8 @@ def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, ma
     if nactive==0:
         print('get_subclusters: no active cluster any more!!!!!')
         pdb.set_trace()
-    # calculate the centroids
-    clf = NearestCentroid(metric='euclidean')
-    print('get_subclusters: calculating centroids with data:', X_new[active_indices, :].shape, prev_labels[active_indices].shape, type(prev_labels[0]))
-    clf.fit(X_new[active_indices, :], prev_labels[active_indices])
-    best_model=ClusterModelOuput(prev_labels, clf.centroids_)
     print('get_subclusters: loop complete')
-    return best_model, X_new
+    return prev_labels, X_new
 
 #---------------------------------------------------------------------------------
 # perform_hierarchical_clustering
@@ -320,12 +315,12 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
             # threshold on the minimum number of points to cluster
             if (current_cluster_data.shape[0]>min_npoints_to_cluster):
 
-                cluster_model, current_cluster_pca_data = get_subclusters(current_cluster_data, evr_threshold, min_npoints_to_cluster, max_npoints_for_outlier, scorer_inner, clust_label, use_kmeans=use_kmeans, verbose=verbose)
+                best_labels, current_cluster_pca_data = get_subclusters(current_cluster_data, evr_threshold, min_npoints_to_cluster, max_npoints_for_outlier, scorer_inner, clust_label, use_kmeans=use_kmeans, verbose=verbose)
                 # find outliers
-                ix_outlier=np.where(cluster_model.labels==OUTLIER_LABEL)[0]
+                ix_outlier=np.where(best_labels==OUTLIER_LABEL)[0]
                 noutliers=len(ix_outlier)
                 cluster_outlier_indxs = cluster.indxs[ix_outlier]
-                ix_non_outlier=np.where(cluster_model.labels!=OUTLIER_LABEL)[0]
+                ix_non_outlier=np.where(best_labels!=OUTLIER_LABEL)[0]
                 nnon_outlier=len(ix_non_outlier)
                 if verbose:
                     print('perform_hierarchical_clustering: ', noutliers, 'outlier points', nnon_outlier, 'non outlier points in cluster', clust_label)
@@ -333,10 +328,10 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                 current_cluster_data_filtered = current_cluster_data[ix_non_outlier]
                 current_cluster_pca_data_filtered=current_cluster_pca_data[ix_non_outlier]
                 current_cluster_indxs_filtered = cluster.indxs[ix_non_outlier]
-                nsub_clusters_filtered = len(np.unique(cluster_model.labels[ix_non_outlier]))
+                nsub_clusters_filtered = len(np.unique(best_labels[ix_non_outlier]))
 
                 current_label=np.unique(possible_labels[current_cluster_indxs_filtered])[0]
-                replacement_labels=replace_current_cluster_labels(current_label, cluster_model.labels, next_cluster_label)
+                replacement_labels=get_replacement_current_cluster_labels(current_label, best_labels, next_cluster_label)
                 if(verbose):
                     print('perform_hierarchical_clustering: replace current cluster {}, label {}, by its subcluster labels'.format(clust_label, current_label), np.unique(replacement_labels))
                 possible_labels[cluster.indxs]=replacement_labels
@@ -364,14 +359,18 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                     if(verbose):
                         print('perform_hierarchical_clustering: level=',n_level," we accept this split and write all subclusters to the tree")
                     # get the medoids of the clusters
-                    medoids_indx_filtered, distances_filtered =  pairwise_distances_argmin_min(cluster_model.centroids, current_cluster_pca_data_filtered)
+                    # calculate the centroids for the new clusters
+                    clf = NearestCentroid(metric='euclidean')
+                    print('perform_hierarchical_clustering: calculating centroids for current cluster with data:', current_cluster_pca_data_filtered.shape, best_labels[ix_non_outlier].shape, type(best_labels[0]))
+                    clf.fit(current_cluster_pca_data_filtered, best_labels[ix_non_outlier])
+                    medoids_indx_filtered, distances_filtered =  pairwise_distances_argmin_min(clf.centroids_, current_cluster_pca_data_filtered)
                     new_medoids = current_cluster_data[medoids_indx_filtered,:]
 
                     # now create nodes to add to the tree for the new sub clusters
                     if(verbose):
                         print('perform_hierarchical_clustering: creating {} subclusters'.format(nsub_clusters_filtered))
                     for c in range(nsub_clusters_filtered):
-                        ix=np.where(cluster_model.labels[ix_non_outlier]==c)[0]
+                        ix=np.where(best_labels[ix_non_outlier]==c)[0]
                         current_subcluster_indxs = current_cluster_indxs_filtered[ix]
                         subcluster = ClusterNode("cl{}".format(c+1), cluster,current_subcluster_indxs, medoid=new_medoids[c])
                     next_cluster_label+=nsub_clusters_filtered

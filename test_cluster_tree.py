@@ -35,6 +35,7 @@ child1=ClusterNode('cl1',root,np.arange(20),medoid=[20,20])
 child2=ClusterNode('cl2',root,np.arange(20)+20,medoid=[30,30])
 print('my test tree')
 root.print()
+root.plot_tree('./testing/test_cluster_tree.png')
 all_var2=root.get_data_by_key('var2')
 diffs=all_var2-data[:,1]
 assert(np.sum(abs(diffs))==0)
@@ -43,7 +44,7 @@ diffs=var1-data[:20,0]
 assert(np.sum(abs(diffs))==0)
 
 # write it then read back in to check it matches
-fname='test_cluster_tree.hdf'
+fname='./testing/test_cluster_tree.hdf'
 write_cluster_tree_hdf(root,fname,verbose=True)
 
 root2, leaves=read_cluster_tree_hdf(fname,verbose=True)

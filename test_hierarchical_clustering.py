@@ -29,14 +29,14 @@ def test_replace_current_cluster_labels():
     old_label=0
     model_labels=np.asarray([0,0,1,1,1,1,0,1,0,0])
     next_cluster_label=1
-    new_labels=replace_current_cluster_labels(old_label, model_labels, next_cluster_label)
+    new_labels=get_replacement_current_cluster_labels(old_label, model_labels, next_cluster_label)
     exp_new_labels=model_labels
     assert(np.all(new_labels==exp_new_labels))
     # case where we have 2 existing nodes so next_cluster_label=2 and we have split label 0 into 3
     old_label=0
     model_labels=np.asarray([0,0,0,1,2,1,0,2])
     next_cluster_label=2
-    new_labels=replace_current_cluster_labels(old_label, model_labels, next_cluster_label)
+    new_labels=get_replacement_current_cluster_labels(old_label, model_labels, next_cluster_label)
     exp_new_labels=np.asarray([0,0,0,2,3,2,0,3])
     assert(np.all(new_labels==exp_new_labels))
     
@@ -66,7 +66,7 @@ def test_hierarchical_clustering():
 
     pc_points_to_cluster=6
     pc_outier_points=100*(nsamples_out+20)/nsamples
-    root=perform_hierarchical_clustering(X, ['A','B','C','D'], 0.8, pc_points_to_cluster, pc_outier_points, 'WG', 'SIL', '/gws/smf/j07/ncas_radar/jcrook/Clustering/testing/', 'test', verbose=True)
+    root=perform_hierarchical_clustering(X, ['A','B','C','D'], 0.8, pc_points_to_cluster, pc_outier_points, 'WG', 'SIL', './testing/', 'test_spectral', verbose=True)
     leaves=[]
     root.leaves(leaves)
     leaves=np.asarray(leaves)
@@ -97,7 +97,7 @@ def test_hierarchical_clustering():
     assert(med_dist_22<med_dist_2o)
     
     print('now doing KMeans')
-    root=perform_hierarchical_clustering(X, ['A','B','C','D'], 0.8, pc_points_to_cluster, pc_outier_points, 'SIL', 'SIL', '/gws/smf/j07/ncas_radar/jcrook/Clustering/testing/', 'test_kmeans', use_kmeans=True, verbose=True)
+    root=perform_hierarchical_clustering(X, ['A','B','C','D'], 0.8, pc_points_to_cluster, pc_outier_points, 'SIL', 'SIL', './testing/', 'test_kmeans', use_kmeans=True, verbose=True)
     leaves=[]
     root.leaves(leaves)
     leaves=np.asarray(leaves)
