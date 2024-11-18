@@ -52,14 +52,22 @@ class Score(object):
     def compute_score(self, X, labels, verbose=False):
         raise RuntimeError("Not implemented")
 
-    # plot scores vs number of clusters
+    # plot scores vs number of clusters or tries if we don't have nclusters
     def plot_scores(self, outdir):
         fig = plt.figure(1, figsize=(6, 6))
         ax = fig.add_subplot(111)
-
-        plt.scatter(np.asarray(self.nclusters),np.asarray(self.scores).astype(float))
+        y=np.asarray(self.scores)
+        if len(self.nclusters)>0:
+            x=np.asarray(self.nclusters)
+            xtitle='number of active clusters'
+        else:
+            x=np.arange(len(self.scores))+1
+            xtitle='number of times'
+        plt.scatter(x,y)
         plt.title(self.name+' scores through the loops')
-        plt.xlabel('nclusters')
+        plt.xlabel(xtitle)
+        if len(x)>1:
+            plt.xticks(x)
         plt.ylabel('score')
         plt.savefig(outdir+self.name+'scores_curve.png' , format='png',dpi=200)
         plt.close()

@@ -16,13 +16,13 @@ OUTLIER_LABEL=-9 # used to define an OUTLIER node
 OUTLIER_NAME='outlr' # name that the outlier node is given
 
 #---------------------------------------------------------------------------------
-# class to hold data for a node in a tree - inherits fron anytree.Node (used for peinting and plotting)
+# class to hold data for a node in a tree - inherits fron anytree.Node (used for printing and plotting)
 # we expect the tree to hold data and variables only in the root node and the indxs in each sub node in the
 # tree will define which of the data in root is included in this node.
 #---------------------------------------------------------------------------------
 class ClusterNode(Node):
 
-    def __init__(self,name,parent,indxs,data=[],variables=[],medoid=[]):
+    def __init__(self,name,parent,indxs,data=[],variables=[],centroid=[],medoid=[]):
         super().__init__(name, parent=parent)
         self.indxs = np.asarray(indxs)
         if parent==None:
@@ -31,6 +31,7 @@ class ClusterNode(Node):
             if len(variables)==0:
                 raise ValueError('variables (names of variables) not given for root')
         self.data = data # either [] or an array of (nsamples, nvars)
+        self.centroid = centroid
         self.medoid = medoid
         self.variables=variables # holds the meaning of the nvars in data
 
@@ -119,6 +120,9 @@ class ClusterNode(Node):
 #-------------------------------------------------------------------
 def write_cluster_group(cluster, parent_group):
     cluster_group = parent_group.create_group(cluster.name)
+    if len(cluster.centroid)>0:
+        centroid=np.asarray(cluster.centroid)
+        centroid_id = cluster_group.create_dataset('centroid', centroid.shape, data=centroid)
     if len(cluster.medoid)>0:
         medoid=np.asarray(cluster.medoid)
         medoid_id = cluster_group.create_dataset('medoid', medoid.shape, data=medoid)
@@ -177,10 +181,13 @@ def read_keys(group, current_node, leaves, ignore_outlr, verbose):
             if 'indxs' not in this_keys:
                 raise ValueError('indxs not in group '+key)
             indxs=this_group['indxs'][:]
+            centroid=[]
+            if 'centroid' in this_keys:
+                centroid=this_group['centroid'][:]
             medoid=[]
             if 'medoid' in this_keys:
                 medoid=this_group['medoid'][:]
-            pca=[]
+            pca=[] # this is historical (pca no longer stored)
             if 'pca' in this_keys:
                 pca=this_group['pca'][:] # we wont bother storing this in tree
                 #print('file has pca for', key)
@@ -197,7 +204,7 @@ def read_keys(group, current_node, leaves, ignore_outlr, verbose):
                 parent_label=''
                 if current_node!=None:
                     parent_label=current_node.get_label()
-            new_cluster=ClusterNode(key, current_node, indxs, data=data, variables=variables, medoid=medoid)
+            new_cluster=ClusterNode(key, current_node, indxs, data=data, variables=variables, centroid=centroid, medoid=medoid)
             if current_node==None:
                 root=new_cluster
             read_keys(this_group, new_cluster, leaves, ignore_outlr, verbose)

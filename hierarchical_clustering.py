@@ -151,11 +151,7 @@ def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, ma
     
     # convert data to pca
     X_std = QuantileTransformer(output_distribution='normal').fit_transform(this_cluster_data)
-    if use_kmeans:
-        X_new=X_std
-        selected_pca=this_cluster_data.shape[1]
-    else:
-        selected_pca, X_new = get_PCA(X_std, evr_threshold, verbose=verbose)
+    selected_pca, X_new = get_PCA(X_std, evr_threshold, verbose=verbose)
     
     active_indices=np.arange(this_cluster_data.shape[0])  # initially all indices for this data
     nactive=this_cluster_data.shape[0]
@@ -307,6 +303,9 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
 
         for k in sorted_ix:
             cluster = active_clusters[k]
+            if hasattr(cluster, 'complete'):
+                # we tried this before so skip
+                continue
             current_cluster_data = cluster_data[cluster.indxs]
             clust_label = cluster.get_label() # get the full name so we know where we are in the hierarchy
             if verbose:
@@ -349,8 +348,9 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                 split_is_better = scorer.split_is_better(new_score)
 
                 if split_is_better==False:
-                    # go back to previous accepted labels
+                    # go back to previous accepted labels and mark this cluster as tested so we don't try doing it again in the next loop
                     possible_labels=np.copy(all_labels)
+                    cluster.complete=True
                     if(verbose):
                         print('perform_hierarchical_clustering: level=', n_level," we don't accept this split")
                         print('perform_hierarchical_clustering: possible labels set back to all_labels', np.unique(possible_labels))
@@ -362,9 +362,9 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                     # calculate the centroids for the new clusters
                     clf = NearestCentroid(metric='euclidean')
                     print('perform_hierarchical_clustering: calculating centroids for current cluster with data:', current_cluster_pca_data_filtered.shape, best_labels[ix_non_outlier].shape, type(best_labels[0]))
-                    clf.fit(current_cluster_pca_data_filtered, best_labels[ix_non_outlier])
-                    medoids_indx_filtered, distances_filtered =  pairwise_distances_argmin_min(clf.centroids_, current_cluster_pca_data_filtered)
-                    new_medoids = current_cluster_data[medoids_indx_filtered,:]
+                    clf.fit(current_cluster_data_filtered, best_labels[ix_non_outlier])
+                    medoids_indx_filtered, distances_filtered =  pairwise_distances_argmin_min(clf.centroids_, current_cluster_data_filtered)
+                    medoids = current_cluster_data[medoids_indx_filtered,:]
 
                     # now create nodes to add to the tree for the new sub clusters
                     if(verbose):
@@ -372,8 +372,8 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                     for c in range(nsub_clusters_filtered):
                         ix=np.where(best_labels[ix_non_outlier]==c)[0]
                         current_subcluster_indxs = current_cluster_indxs_filtered[ix]
-                        subcluster = ClusterNode("cl{}".format(c+1), cluster,current_subcluster_indxs, medoid=new_medoids[c])
-                    next_cluster_label+=nsub_clusters_filtered
+                        subcluster = ClusterNode("cl{}".format(c+1), cluster,current_subcluster_indxs, centroid=clf.centroids_,medoid=medoids[c])
+
                     # now create any outlier node
                     if noutliers>0:
                         outlier_data = current_cluster_data[ix_outlier]
@@ -384,10 +384,10 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                         else:
                             # add these outlier indices to the already existing outlier node
                             outlier_node.indxs=np.concatenate([outlier_node.indxs, cluster_outlier_indxs])
-                    scorer.add_score(new_score, next_cluster_label)
-                    # copy the labels we worked out this time to all_labels
+                    # copy the labels we worked out this time to all_labels and save the score
                     all_labels=np.copy(possible_labels)
                     next_cluster_label=np.amax(all_labels)+1
+                    scorer.add_score(new_score, next_cluster_label)
                     n_splits += 1
 
 
