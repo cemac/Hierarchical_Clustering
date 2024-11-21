@@ -406,7 +406,10 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
         out_fname='{}_{}_data_{}_level_{}_active_clusters.hdf'.format(plot_fname_prefix, root.name, str(n_level), str(next_cluster_label))
         if verbose:
             print('perform_hierarchical_clustering: writing tree data for level', n_level, out_fname)
-        write_cluster_tree_hdf(root, output_dir+out_fname)
+        clust_type='spectral'
+        if use_kmeans:
+            clust_type='Kmeans'
+        write_cluster_tree_hdf(root, clust_type, scorer_inner, scorer_outer, max_npoints_for_outlier, min_npoints_to_cluster, output_dir+out_fname)
 
         n_level += 1
     scorer.plot_scores(output_dir+plot_fname_prefix+'_')

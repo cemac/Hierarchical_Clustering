@@ -100,6 +100,18 @@ class ClusterNode(Node):
             
         return label_str
 
+    # if the tree has been created with this code the indxs in root should be np.arange(nsampels)
+    # if the tree was created using Maryna's code with indxs being the valid data indices then we need to find
+    # the matching indxs in a node with what is in root
+    def get_data_indxs(self):
+        root=self.get_root()
+        if np.any(abs(root.indxs-np.arange(root.data.shape[0]))>0):
+            # the root indxs is not just array from 0 to nsamples
+            indxs=np.asarray([np.where(root.indxs==ix)[0][0] for ix in self.indxs])
+        else:
+            indxs=self.indxs
+        return indxs
+
     # find the end nodes (leaves) of the tree
     def leaves(self, leaves, ignore_outlier=False):
         if self.is_leaf and (ignore_outlier==False or self.name!=OUTLIER_NAME):
@@ -146,10 +158,15 @@ def write_cluster_group(cluster, parent_group):
 #    root - the top node of the tree (ClusterNode)
 #    out_filename - where to save the hdf file
 #-------------------------------------------------------------------
-def write_cluster_tree_hdf(root, out_filename,verbose=False):
+def write_cluster_tree_hdf(root, clust_type, inner_score_type, outer_score_type, outlier_threshold, split_threshold, out_filename,verbose=False):
     
     f = h5py.File(out_filename, 'w')
-    parent_group = write_cluster_group(root, f)
+    f.attrs['clustering_type']=clust_type
+    f.attrs['inner_score']=inner_score_type
+    f.attrs['outer_score']=outer_score_type
+    f.attrs['outlier_threshold']=outlier_threshold
+    f.attrs['split_threshold']=split_threshold
+    parent = write_cluster_group(root, f)
     if verbose:
         print ('writing the {} file is finished'.format(out_filename))
     f.close()
@@ -228,6 +245,7 @@ def read_keys(group, current_node, leaves, ignore_outlr, verbose):
 # returns:
 #    root - the top element of the tree that points to all elements in the tree
 #    leaves - a list of the elements that are end nodes, i.e. active clusters
+#    attrs - the attributes for the whole tree
 #-------------------------------------------------------------------
 def read_cluster_tree_hdf(filename, ignore_outlr=False, verbose=False):
     try:
@@ -240,7 +258,7 @@ def read_cluster_tree_hdf(filename, ignore_outlr=False, verbose=False):
 
     leaves=[] # a list of the leaves (these are the active clusters)
     root=read_keys(group, None, leaves, ignore_outlr, verbose)
-    return root, leaves
+    return root, leaves, group.attrs
 
 #-------------------------------------------------------------------
 # The tree holds an indx of the data that are part of this node for each leaf in the tree.
@@ -259,12 +277,6 @@ def get_leaf_index_for_input_indx(leaves, root):
     for n in range(len(leaves)):
         if leaves[n].name==OUTLIER_NAME:
             continue
-        for ix in leaves[n].indxs:
-            root_ix=np.where(root.indxs==ix)
-            if len(root_ix[0])!=1:
-                raise Exception('node={}'.format(n)+' zero or more than 1 root indxs found for cluster index {}'.format(ix))
-            if leaf_indxs[root_ix[0][0]]!=OUTLIER_LABEL:
-                raise Exception('node={}'.format(n)+' leaf_indxs already set for root_ix {}'.format(root_ix[0][0]))
-            leaf_indxs[root_ix[0][0]]=n
-                
+        root_ix=leaves[n].get_data_indxs()
+        leaf_indxs[root_ix]=n
     return leaf_indxs
