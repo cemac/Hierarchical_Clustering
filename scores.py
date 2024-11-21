@@ -31,14 +31,14 @@ class Score(object):
     #---------------------------------------------------------------------------------
     #  split_is_better
     #    input:  new_score
-    #    return: True if the difference between new_score and last score in self.scores is positive
+    #    return: True if the difference between new_score and last score in self.scores is positive or zero
     #            (the last split makes the total clustering better)
     #            False if the difference is negative (the last split doesn't help => the split before that was optimal)
     #---------------------------------------------------------------------------------
     def split_is_better(self, new_score):
         if len(self.scores)==0:
             return True
-        return (new_score > self.scores[-1]) # I dont think we should treat the same score as being better. 
+        return (new_score >= self.scores[-1]) 
 
     #---------------------------------------------------------------------------------
     #    Computes score for a given clusters
@@ -151,14 +151,14 @@ class DaviesBouldin_Score(Score):
     #---------------------------------------------------------------------------------
     #  split_is_better - this is the opposite for other scores, ie a lower score is better
     #    input:  new_score
-    #    return: True if the difference between new_score and last score in self.scores is negative
+    #    return: True if the difference between new_score and last score in self.scores is negative or zero
     #            (the last split makes the total clustering better)
     #            False if the difference is positive (the last split doesn't help => the split before that was optimal)
     #---------------------------------------------------------------------------------
     def split_is_better(self, new_score):
         if len(self.scores)==0:
             return True
-        return (new_score < self.scores[-1])
+        return (new_score <= self.scores[-1])
         
     #    Computes the davie bouldin score for given clusters
     def compute_score(self, X, labels, verbose=False):
