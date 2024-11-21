@@ -45,13 +45,22 @@ assert(np.sum(abs(diffs))==0)
 
 # write it then read back in to check it matches
 fname='./testing/test_cluster_tree.hdf'
-write_cluster_tree_hdf(root,fname,verbose=True)
+clust_type='spectral'
+inner_score_type='SIL'
+outer_score_type='WG'
+outlier_threshold=100
+split_threshold=2000
+my_attrs={'clustering_type':clust_type,'inner_score':inner_score_type,'outer_score':outer_score_type,
+'outlier_threshold':outlier_threshold,'split_threshold':split_threshold}
+write_cluster_tree_hdf(root,clust_type, inner_score_type, outer_score_type, outlier_threshold, split_threshold, fname, verbose=True)
 
-root2, leaves=read_cluster_tree_hdf(fname,verbose=True)
+root2, leaves, attrs=read_cluster_tree_hdf(fname,verbose=True)
 assert(len(leaves)==2)
 assert(leaves[0].name=='cl1')
 assert(leaves[1].name=='cl2')
 root2.print()
+for key in my_attrs.keys():
+    assert(attrs[key]==my_attrs[key])
 # check that we can get the clusters for all data
 clusters=get_leaf_index_for_input_indx(leaves, root2)
 assert(check_clusters(clusters, leaves, root2))
