@@ -307,14 +307,14 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                 # we tried this before so skip
                 continue
             current_cluster_data = cluster_data[cluster.indxs]
-            clust_label = cluster.get_label() # get the full name so we know where we are in the hierarchy
+            clust_name = cluster.get_full_name() # get the full name so we know where we are in the hierarchy
             if verbose:
-                print('perform_hierarchical_clustering: we work with cluster {} name {} of size {}, next cluster_label= {}'.format(k,clust_label,cluster_sizes[k],next_cluster_label))
+                print('perform_hierarchical_clustering: we work with cluster {} name {} of size {}, next cluster_label= {}'.format(k,clust_name,cluster_sizes[k],next_cluster_label))
 
             # threshold on the minimum number of points to cluster
             if (current_cluster_data.shape[0]>min_npoints_to_cluster):
 
-                best_labels, current_cluster_pca_data = get_subclusters(current_cluster_data, evr_threshold, min_npoints_to_cluster, max_npoints_for_outlier, scorer_inner, clust_label, use_kmeans=use_kmeans, verbose=verbose)
+                best_labels, current_cluster_pca_data = get_subclusters(current_cluster_data, evr_threshold, min_npoints_to_cluster, max_npoints_for_outlier, scorer_inner, clust_name, use_kmeans=use_kmeans, verbose=verbose)
                 # find outliers
                 ix_outlier=np.where(best_labels==OUTLIER_LABEL)[0]
                 noutliers=len(ix_outlier)
@@ -322,7 +322,7 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                 ix_non_outlier=np.where(best_labels!=OUTLIER_LABEL)[0]
                 nnon_outlier=len(ix_non_outlier)
                 if verbose:
-                    print('perform_hierarchical_clustering: ', noutliers, 'outlier points', nnon_outlier, 'non outlier points in cluster', clust_label)
+                    print('perform_hierarchical_clustering: ', noutliers, 'outlier points', nnon_outlier, 'non outlier points in cluster', clust_name)
                 # Use ix_non_outlier to filter current_cluster_data, current_cluster_indxs for further processing
                 current_cluster_data_filtered = current_cluster_data[ix_non_outlier]
                 current_cluster_pca_data_filtered=current_cluster_pca_data[ix_non_outlier]
@@ -332,10 +332,10 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                 current_label=np.unique(possible_labels[current_cluster_indxs_filtered])[0]
                 replacement_labels=get_replacement_current_cluster_labels(current_label, best_labels, next_cluster_label)
                 if(verbose):
-                    print('perform_hierarchical_clustering: replace current cluster {}, label {}, by its subcluster labels'.format(clust_label, current_label), np.unique(replacement_labels))
+                    print('perform_hierarchical_clustering: replace current cluster {}, label {}, by its subcluster labels'.format(clust_name, current_label), np.unique(replacement_labels))
                 possible_labels[cluster.indxs]=replacement_labels
                 if verbose:
-                    print('perform_hierarchical_clustering: poss labels after inner loop for cluster', clust_label, np.unique(possible_labels))
+                    print('perform_hierarchical_clustering: poss labels after inner loop for cluster', clust_name, np.unique(possible_labels))
                 # get all the labels and data that are not outliers
                 ix_good=np.where(possible_labels!=OUTLIER_LABEL)[0]
                 possible_labels_filtered=possible_labels[ix_good]
@@ -372,7 +372,7 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                     for c in range(nsub_clusters_filtered):
                         ix=np.where(best_labels[ix_non_outlier]==c)[0]
                         current_subcluster_indxs = current_cluster_indxs_filtered[ix]
-                        subcluster = ClusterNode("cl{}".format(c+1), cluster,current_subcluster_indxs, centroid=clf.centroids_,medoid=medoids[c])
+                        subcluster = ClusterNode("cl{}".format(c+1), cluster,current_subcluster_indxs, centroid=clf.centroids_[c],medoid=medoids[c])
 
                     # now create any outlier node
                     if noutliers>0:

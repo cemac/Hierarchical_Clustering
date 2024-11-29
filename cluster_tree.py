@@ -89,16 +89,16 @@ class ClusterNode(Node):
     def plot_tree(self, fname):
         UniqueDotExporter(self).to_picture(fname)
         
-    # get the label as a string from the top of the hierarchy by working back up through the parent
+    # get the full name as a string from the top of the hierarchy by working back up through the parent
     # eg root/cl1/cl1/cl2
-    def get_label(self):
-        label_str=self.name
+    def get_full_name(self):
+        name_str=self.name
         parent=self.parent
         while parent!=None:
-            label_str=parent.name+'/'+label_str
+            name_str=parent.name+'/'+name_str
             parent=parent.parent
             
-        return label_str
+        return name_str
 
     # if the tree has been created with this code the indxs in root should be np.arange(nsampels)
     # if the tree was created using Maryna's code with indxs being the valid data indices then we need to find
@@ -218,9 +218,10 @@ def read_keys(group, current_node, leaves, ignore_outlr, verbose):
                     variables2=[var.decode('utf-8') for var in variables]
                     variables=variables2
             if verbose:
-                parent_label=''
+                parent_full_name=''
                 if current_node!=None:
-                    parent_label=current_node.get_label()
+                    parent_full_name=current_node.get_full_name()
+                    print('adding', key, 'to', parent_full_name) 
             new_cluster=ClusterNode(key, current_node, indxs, data=data, variables=variables, centroid=centroid, medoid=medoid)
             if current_node==None:
                 root=new_cluster
