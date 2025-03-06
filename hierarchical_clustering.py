@@ -1,12 +1,16 @@
+
 """ 
  Code to perform hierarchical spectral or Kmeans clustering on given data
- The data is transformed to PCA before the clustering.
+ The data is normalised at each level of clustering and can be transformed to
+ PCA space before the clustering.
  The code consists of an inner loop that does the clustering for a single leaf
- of the current tree, and an outer node that decides whether to accept that
+ of the current tree, and an outer loop that decides whether to accept that
  clustering and whether to go to the next level in the hierarchy.
  The user can chose which scores to use for both the inner and outer loop from
- Wemmert-Gancarski, CalinskiHarabasz, Silhouette or DaviesBouldin
+ Wemmert-Gancarski, CalinskiHarabasz, Silhouette, DaviesBouldin or BIC
  If a cluster is too sparsely populated it will be added to an outlier node.
+ The code does not try to split clusters that do not contain more than a certain
+ percentage of the points. 
 
  Authors:
  * Written by Julia Crook, Maryna Lukach
@@ -130,8 +134,9 @@ def get_replacement_current_cluster_labels(old_label, model_labels, next_cluster
 # If better we go round the loop again with nclusters incremented
 #
 # inputs:
-#     this_cluster_data - the data[nsamples,nvars] for the current cluster
+#     this_cluster_data - the normalised data[nsamples,nvars] for the current cluster
 #     evr_threshold - explained variance ratio threshold - we use this to determine how many variables to use in the PCA calculation
+#                    if this is 0 we wont put data into pca space but just normalise the data
 #     min_npoints_to_cluster - if a cluster holds less than this number of points we wont try to subcluster
 #     max_npoints_for_outlier - the number of points that defines a subcluster as being an outlier
 #     scorer_type - the type of scorer to use for the inner loop to determine when to stop
@@ -140,7 +145,6 @@ def get_replacement_current_cluster_labels(old_label, model_labels, next_cluster
 #     verbose - if True, print what is going on
 # returns:
 #     prev_labels - the labels defining the new sub clusters of this cluster
-#     X_new - the pca data for this cluster
 #---------------------------------------------------------------------------------
 def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, max_npoints_for_outlier, scorer_type, cluster_name, use_kmeans=False, verbose=False):
 
@@ -150,9 +154,13 @@ def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, ma
     split_is_better=True
     
     # convert data to pca
-    X_std = QuantileTransformer(output_distribution='normal').fit_transform(this_cluster_data)
-    selected_pca, X_new = get_PCA(X_std, evr_threshold, verbose=verbose)
-    
+    if evr_threshold!=0:
+        selected_pca, X_new = get_PCA(this_cluster_data, evr_threshold, verbose=verbose)
+        if selected_pca==1:
+            raise ValueError('get_subclusters(): only one PC chosen, input_data likely to be invalid')
+    else:
+        X_new=this_cluster_data
+        
     active_indices=np.arange(this_cluster_data.shape[0])  # initially all indices for this data
     nactive=this_cluster_data.shape[0]
     new_labels=np.zeros(this_cluster_data.shape[0], int)
@@ -165,7 +173,7 @@ def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, ma
         if verbose:
             print('get_subclusters: number_of_clusters {}'.format(number_of_clusters))
 
-        X_new_filtered = X_new[active_indices, 0:selected_pca] # used to do a copy?
+        X_new_filtered = X_new[active_indices, 0:selected_pca]
         if verbose:
             print('get_subclusters: doing {} clustering of {} with X_new_filtered.shape = {}'.format(clust_type, cluster_name, X_new_filtered.shape))
 
@@ -247,7 +255,7 @@ def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, ma
         print('get_subclusters: no active cluster any more!!!!!')
         pdb.set_trace()
     print('get_subclusters: loop complete')
-    return prev_labels, X_new
+    return prev_labels
 
 #---------------------------------------------------------------------------------
 # perform_hierarchical_clustering
@@ -256,6 +264,7 @@ def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, ma
 #    cluster_data[namples,nvars] - all the data that will be clustered
 #    field_list - list of the names of the radar variables in the cluster_data (this is stored in root of the tree)
 #    evr_threshold - explained variance ratio threshold - we use this to determine how many variables to use in the PCA calculation
+#                    if this is 0 we wont put data into pca space but just normalise the data
 #    min_pc_points_to_cluster - if a cluster holds less than this % x number of samples we wont try to subcluster
 #    max_pc_points_for_outlier - defines the number of points (this % x number of samples) that defines an outlier
 #    scorer_outer - the type of scorer for the outer loop
@@ -266,14 +275,19 @@ def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, ma
 #    verbose - if True, print what is going on
 #---------------------------------------------------------------------------------
 def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min_pc_points_to_cluster, max_pc_points_for_outlier, scorer_outer, scorer_inner, output_dir, plot_fname_prefix, use_kmeans=False, verbose=False):
+
+    ix=np.where(cluster_data==np.nan)
+    if len(ix[0])>0:
+        raise ValueError('perform_hierarchical_clustering(): input_data has nans')
         
     nsamples=cluster_data.shape[0]
     min_npoints_to_cluster=int(min_pc_points_to_cluster*nsamples/100)
     max_npoints_for_outlier=int(max_pc_points_for_outlier*nsamples/100)
+    nvars=cluster_data.shape[1]
     if verbose:
         print(nsamples, 'samples, min points to cluster=', min_npoints_to_cluster, 'max points for outlier=',max_npoints_for_outlier)
-    all_labels = np.zeros(nsamples, int)
-    possible_labels=np.copy(all_labels)
+    all_labels = np.zeros(nsamples, int) # this is the labels we have accepted
+    possible_labels=np.copy(all_labels) # this is the labels that we might accept
     # whole dataset is the root cluster
     # create root node of the cluster-tree
     root = ClusterNode('root',None,np.arange(nsamples),data=cluster_data,variables=field_list)
@@ -307,14 +321,18 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                 # we tried this before so skip
                 continue
             current_cluster_data = cluster_data[cluster.indxs]
+            # calculate normalised data for this cluster
+            qt=QuantileTransformer(output_distribution='normal')
+            current_cluster_std_data = qt.fit_transform(current_cluster_data)
+
             clust_name = cluster.get_full_name() # get the full name so we know where we are in the hierarchy
             if verbose:
                 print('perform_hierarchical_clustering: we work with cluster {} name {} of size {}, next cluster_label= {}'.format(k,clust_name,cluster_sizes[k],next_cluster_label))
 
             # threshold on the minimum number of points to cluster
-            if (current_cluster_data.shape[0]>min_npoints_to_cluster):
+            if (current_cluster_std_data.shape[0]>min_npoints_to_cluster):
 
-                best_labels, current_cluster_pca_data = get_subclusters(current_cluster_data, evr_threshold, min_npoints_to_cluster, max_npoints_for_outlier, scorer_inner, clust_name, use_kmeans=use_kmeans, verbose=verbose)
+                best_labels = get_subclusters(current_cluster_std_data, evr_threshold, min_npoints_to_cluster, max_npoints_for_outlier, scorer_inner, clust_name, use_kmeans=use_kmeans, verbose=verbose)
                 # find outliers
                 ix_outlier=np.where(best_labels==OUTLIER_LABEL)[0]
                 noutliers=len(ix_outlier)
@@ -323,13 +341,14 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                 nnon_outlier=len(ix_non_outlier)
                 if verbose:
                     print('perform_hierarchical_clustering: ', noutliers, 'outlier points', nnon_outlier, 'non outlier points in cluster', clust_name)
-                # Use ix_non_outlier to filter current_cluster_data, current_cluster_indxs for further processing
+                # Use ix_non_outlier to filter current_cluster_data, and best_labels for further processing
                 current_cluster_data_filtered = current_cluster_data[ix_non_outlier]
-                current_cluster_pca_data_filtered=current_cluster_pca_data[ix_non_outlier]
-                current_cluster_indxs_filtered = cluster.indxs[ix_non_outlier]
-                nsub_clusters_filtered = len(np.unique(best_labels[ix_non_outlier]))
+                current_cluster_std_data_filtered=current_cluster_std_data[ix_non_outlier]
+                best_labels_filtered=best_labels[ix_non_outlier]
+                nsub_clusters_filtered = len(np.unique(best_labels_filtered))
 
-                current_label=np.unique(possible_labels[current_cluster_indxs_filtered])[0]
+                current_unique_labels=np.unique(possible_labels[cluster.indxs])
+                current_label=current_unique_labels[0]
                 replacement_labels=get_replacement_current_cluster_labels(current_label, best_labels, next_cluster_label)
                 if(verbose):
                     print('perform_hierarchical_clustering: replace current cluster {}, label {}, by its subcluster labels'.format(clust_name, current_label), np.unique(replacement_labels))
@@ -341,7 +360,8 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                 possible_labels_filtered=possible_labels[ix_good]
                 all_data_filtered=cluster_data[ix_good]
                 # compute score for this split on the original dataset minus the outliers
-                # should this be calculated on actual data or pca data?
+                # we have to calculate this on actual data as we are doing it for all data
+                # for which we do not have a normalised version
                 new_score=scorer.compute_score(all_data_filtered, possible_labels_filtered,verbose=verbose)
                 if(verbose):
                     print('perform_hierarchical_clustering: got the new {} score'.format(scorer.name), new_score)
@@ -358,25 +378,32 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                 else:
                     if(verbose):
                         print('perform_hierarchical_clustering: level=',n_level," we accept this split and write all subclusters to the tree")
-                    # get the medoids of the clusters
-                    # calculate the centroids for the new clusters
+                    # Now we need to create the new subclusters.
+                    # First calculate the centroids from which we will get the medoids to be stored with each new subcluster
+                    # Get the medoids of the clusters based on normalised data
                     clf = NearestCentroid(metric='euclidean')
-                    print('perform_hierarchical_clustering: calculating centroids for current cluster with data:', current_cluster_pca_data_filtered.shape, best_labels[ix_non_outlier].shape, type(best_labels[0]))
-                    clf.fit(current_cluster_data_filtered, best_labels[ix_non_outlier])
-                    medoids_indx_filtered, distances_filtered =  pairwise_distances_argmin_min(clf.centroids_, current_cluster_data_filtered)
-                    medoids = current_cluster_data[medoids_indx_filtered,:]
-
-                    # now create nodes to add to the tree for the new sub clusters
-                    if(verbose):
+                    if verbose:
                         print('perform_hierarchical_clustering: creating {} subclusters'.format(nsub_clusters_filtered))
+                        print('perform_hierarchical_clustering: calculating centroids for current cluster with filtered std data')
+                    clf.fit(current_cluster_std_data_filtered, best_labels_filtered)
+                    # reverse transform the centroids to get centroids on original data
+                    orig_centroids=qt.inverse_transform(clf.centroids_)
+                    # There is a small chance that cluster1 has a C shape and cluster2 fits within the C which
+                    # would mean that the closest point to the centroid of cluster1 would actually be in cluster2.
+                    # Therefore we go round a loop to calculate medoids for each new subcluster just using the data
+                    # for that subcluster.
                     for c in range(nsub_clusters_filtered):
-                        ix=np.where(best_labels[ix_non_outlier]==c)[0]
-                        current_subcluster_indxs = current_cluster_indxs_filtered[ix]
-                        subcluster = ClusterNode("cl{}".format(c+1), cluster,current_subcluster_indxs, centroid=clf.centroids_[c],medoid=medoids[c])
+                        this_subcluster_data = current_cluster_data[best_labels == c,:]
+                        this_subcluster_std_data = current_cluster_std_data[best_labels == c,:]
+                        medoids_indx, distances_filtered =  pairwise_distances_argmin_min(clf.centroids_[c].reshape(1, -1), this_subcluster_std_data)
+                        this_medoids = this_subcluster_data[medoids_indx[0],:]
+                        # now create node to add to the tree for this new sub cluster
+                        ix=np.where(best_labels==c)[0]
+                        current_subcluster_indxs = cluster.indxs[ix]
+                        subcluster = ClusterNode("cl{}".format(c+1), cluster,cluster.indxs[best_labels==c], centroid=orig_centroids[c],medoid=this_medoids)
 
                     # now create any outlier node
                     if noutliers>0:
-                        outlier_data = current_cluster_data[ix_outlier]
                         if outlier_node==None:
                             if(verbose):
                                 print('perform_hierarchical_clustering: creating outlier node')
@@ -398,11 +425,8 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
                 print('perform_hierarchical_clustering: The list of scores looks like', scorer.scores)
         elif verbose:
             print('perform_hierarchical_clustering: level {}. We go to the next round'.format(n_level))
-        this_plot_fname="{}{}_tree_{}_loop.png".format(output_dir,plot_fname_prefix, n_level)
         if verbose:   
-            print('perform_hierarchical_clustering: plotting tree for loop', this_plot_fname)
-        root.plot_tree(this_plot_fname)
-        
+            root.print()
         out_fname='{}_{}_data_{}_level_{}_active_clusters.hdf'.format(plot_fname_prefix, root.name, str(n_level), str(next_cluster_label))
         if verbose:
             print('perform_hierarchical_clustering: writing tree data for level', n_level, out_fname)
@@ -411,7 +435,9 @@ def perform_hierarchical_clustering(cluster_data, field_list, evr_threshold, min
             clust_type='Kmeans'
         write_cluster_tree_hdf(root, clust_type, scorer_inner, scorer_outer, max_npoints_for_outlier, min_npoints_to_cluster, output_dir+out_fname)
 
-        n_level += 1
+        n_level += 1            
+    this_plot_fname=output_dir+plot_fname_prefix+'_tree.png'
+    root.plot_tree(this_plot_fname)
     scorer.plot_scores(output_dir+plot_fname_prefix+'_')
 
     print('perform_hierarchical_clustering: loop complete clustering is finished')

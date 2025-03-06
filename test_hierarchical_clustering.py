@@ -119,3 +119,7 @@ def test_hierarchical_clustering():
     print('med diff set2 to set 1', med_dist_21, 'to set 2', med_dist_22)
     assert(med_dist_22<med_dist_21)
 
+test_remove_label_gaps()
+test_is_cluster_too_small()
+test_replace_current_cluster_labels()
+test_hierarchical_clustering()

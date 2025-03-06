@@ -1,13 +1,13 @@
 name: HIERARCHICAL_CLUSTERING
 channels:
   - conda-forge
-  - defaults
 dependencies:
-  - python=3.8
+  - python
   - scipy
   - numpy
-  - hdf5
+  - h5py
   - pandas
   - matplotlib
-  - sklearn
+  - netCDF4
+  - scikit-learn
   - anytree

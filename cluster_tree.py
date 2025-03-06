@@ -50,7 +50,7 @@ class ClusterNode(Node):
             root=self.get_root()
             variables=root.variables
             data=np.asarray(root.data)
-            ixs=np.concatenate([np.where(root.indxs==i)[0] for i in self.indxs])
+            ixs=self.get_root_data_indxs()
             data=data[ixs,:]
         else:
             variables=self.variables
@@ -66,6 +66,9 @@ class ClusterNode(Node):
     def print(self, ignore_outlier=False):
         if len(self.variables)>0:
             root_variables=self.variables
+        else:
+            root=self.get_root()
+            root_variables=root.variables
         for pre, _, node in RenderTree(self):
             if (ignore_outlier==False or node.name!=OUTLIER_NAME):
                 data_shape=0
@@ -74,14 +77,10 @@ class ClusterNode(Node):
                 is_leaf_str=''
                 if node.is_leaf:
                     is_leaf_str='is leaf,'
-                if len(self.variables)>0:
-                    variables=self.variables
-                else:
-                    variables=root_variables
                 nmed=len(node.medoid)
                 medoid_str=''
                 if nmed>0:
-                    med_strs=['{v}={m:.2f}'.format(v=variables[i],m=node.medoid[i]) for i in range(nmed)]
+                    med_strs=['{v}={m:.2f}'.format(v=root_variables[i],m=node.medoid[i]) for i in range(nmed)]
                     medoid_str='medoids: '+', '.join(med_strs)+','
                 print('%s%s %s %s' % (pre, node.name, is_leaf_str, medoid_str), len(node.indxs), 'indxs, data.shape=', data_shape)
 
@@ -100,17 +99,24 @@ class ClusterNode(Node):
             
         return name_str
 
-    # if the tree has been created with this code the indxs in root should be np.arange(nsampels)
+    # if the tree has been created with this code the indxs in root should be np.arange(nsamples)
     # if the tree was created using Maryna's code with indxs being the valid data indices then we need to find
     # the matching indxs in a node with what is in root
-    def get_data_indxs(self):
+    def get_root_data_indxs(self):
         root=self.get_root()
         if np.any(abs(root.indxs-np.arange(root.data.shape[0]))>0):
             # the root indxs is not just array from 0 to nsamples
             indxs=np.asarray([np.where(root.indxs==ix)[0][0] for ix in self.indxs])
         else:
             indxs=self.indxs
-        return indxs
+        # we sort the indices because if this is an outlier node the indxs will not neccessarily be in order
+        return np.sort(indxs)
+
+    # returns which of the parent indices form this subcluster
+    def get_indxs_into_parent(self):
+        indxs=np.asarray([np.where(self.parent.indxs==ix)[0][0] for ix in self.indxs])
+        # we sort the indices because if this is an outlier node the indxs will not neccessarily be in order
+        return np.sort(indxs)
 
     # find the end nodes (leaves) of the tree
     def leaves(self, leaves, ignore_outlier=False):
@@ -181,11 +187,10 @@ def write_cluster_tree_hdf(root, clust_type, inner_score_type, outer_score_type,
 #    current_node - the current node (ClusterNode) - None if we haven't created root yet
 #    leaves - a list of the current leaves to which we can add this node if it is a leaf
 #    ignore_outlr - if true don't include  the outlr cluster in leaves
-#    verbose - if true do some printing
 # returns:
 #    root
 #-------------------------------------------------------------------
-def read_keys(group, current_node, leaves, ignore_outlr, verbose):
+def read_keys(group, current_node, leaves, ignore_outlr):
     root=None
     keys=group.keys()
     for key in keys:
@@ -217,15 +222,10 @@ def read_keys(group, current_node, leaves, ignore_outlr, verbose):
                 if isinstance(variables[0], np.bytes_):
                     variables2=[var.decode('utf-8') for var in variables]
                     variables=variables2
-            if verbose:
-                parent_full_name=''
-                if current_node!=None:
-                    parent_full_name=current_node.get_full_name()
-                    print('adding', key, 'to', parent_full_name) 
             new_cluster=ClusterNode(key, current_node, indxs, data=data, variables=variables, centroid=centroid, medoid=medoid)
             if current_node==None:
                 root=new_cluster
-            read_keys(this_group, new_cluster, leaves, ignore_outlr, verbose)
+            read_keys(this_group, new_cluster, leaves, ignore_outlr)
         else:
             raise Exception('unexpected group type')
             
@@ -258,9 +258,14 @@ def read_cluster_tree_hdf(filename, ignore_outlr=False, verbose=False):
         raise err
 
     leaves=[] # a list of the leaves (these are the active clusters)
-    root=read_keys(group, None, leaves, ignore_outlr, verbose)
+    root=read_keys(group, None, leaves, ignore_outlr)
+    if verbose:
+        for k in group.attrs.keys():
+            print(k, group.attrs[k])
+        root.print()
     return root, leaves, group.attrs
 
+    
 #-------------------------------------------------------------------
 # The tree holds an indx of the data that are part of this node for each leaf in the tree.
 # This function switches this information round to give a leaf index (ie cluster index) 
@@ -278,6 +283,6 @@ def get_leaf_index_for_input_indx(leaves, root):
     for n in range(len(leaves)):
         if leaves[n].name==OUTLIER_NAME:
             continue
-        root_ix=leaves[n].get_data_indxs()
+        root_ix=leaves[n].get_root_data_indxs()
         leaf_indxs[root_ix]=n
     return leaf_indxs
