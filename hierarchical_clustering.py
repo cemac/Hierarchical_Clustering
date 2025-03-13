@@ -164,12 +164,12 @@ def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, ma
     active_indices=np.arange(this_cluster_data.shape[0])  # initially all indices for this data
     nactive=this_cluster_data.shape[0]
     new_labels=np.zeros(this_cluster_data.shape[0], int)
-    prev_labels=[]
+    prev_labels=np.zeros(this_cluster_data.shape[0], int)
     clust_type='spectral'
     if use_kmeans:
         clust_type='kmeans'
     
-    while split_is_better:
+    while split_is_better and nactive>=min_npoints_to_cluster:
         if verbose:
             print('get_subclusters: number_of_clusters {}'.format(number_of_clusters))
 
@@ -215,25 +215,20 @@ def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, ma
         # recalculate active_indices to exclude outliers for score calculation
         active_indices=np.where(new_labels!=OUTLIER_LABEL)[0]
         nactive=len(active_indices)
-        if nactive<min_npoints_to_cluster:
-            # we cannot continue to split
-            split_is_better=False
+            
+        if number_of_clusters - noutliers==1:
+            # only 1 cluster left if we remove the outliers so we wont be able to calculate a score - have to assume it is better
+            prev_labels=np.copy(new_labels) # save labels from this loop
             if verbose:
-                print('get_subclusters: remaining active points to few to cluster - abandoning')
+                print("get_subclusters: only 1 cluster left after removing outliers so cannot calculate a score")
             continue
         
-        if number_of_clusters - noutliers==1:            
-            # only 1 cluster left if we remove the outliers
-            if verbose:
-                print("get_subclusters: only 1 cluster left after removing outliers")
-            continue # we go to the next iteration of while loop with the active_indices to try again without the outliers
-            
         X_new_filtered=X_new[active_indices, 0:selected_pca]
         this_score=scorer.compute_score(X_new_filtered, new_labels[active_indices])
         if verbose:
             print('get_subclusters: calculated {} score as'.format(scorer.name), this_score)
         if(number_of_clusters > 2):
-            split_is_better=scorer.split_is_better(this_score)
+            split_is_better=scorer.split_is_better(this_score)    
         if split_is_better:
             # we are going round loop again so save these labels and score
             # if we found outliers then don't change the number of clusters but do the clustering again without the outliers
@@ -247,8 +242,13 @@ def get_subclusters(this_cluster_data, evr_threshold, min_npoints_to_cluster, ma
         elif verbose:
             print('get_subclusters: rejecting split and stopping') 
 
-    # we stopped because we found a worse split so use prev_labels
+    # we stopped because we found a worse split or have pulled out outliers and the remaining points are too few in number to split
+    # so use prev_labels
     # recalculate active_indices to exclude outliers
+    if verbose:
+        if nactive<min_npoints_to_cluster:
+            print('get_subclusters: remaining active points to few to cluster')
+
     active_indices=np.where(prev_labels!=OUTLIER_LABEL)[0]
     nactive=len(active_indices)
     if nactive==0:
