@@ -1,4 +1,6 @@
 # Hierarchical_Clustering
+[![DOI](https://zenodo.org/badge/883161294.svg)](https://doi.org/10.5281/zenodo.15017906)
+
 Code to perform hierarchical spectral or Kmeans clustering using the sklearn library.
 
 This code was developed as part of the DRUID project but this contains the generic code for any hierarchical clustering problem. 
